@@ -1,0 +1,138 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage[table,x11names]{xcolor} \definecolor{g}{rgb}{0.95,0.95,0.95}
+\usepackage{hyperref}
+
+\title{CHAINS - An entirely decentralised, blockchain-based, instant messaging system}
+\author{Jasper Parish}
+\date{October 2019}
+
+\begin{document}
+
+\maketitle
+\begin{abstract}
+    An entirely decentralised, blockchain-based messaging service would allow for private and secure messaging whilst avoiding the hoarding of users' personal information by large businesses. If the feature-set of a typical non-secure messaging app could be implemented into this decentralised system, then a competitive messaging service could be created that avoids nearly all the pitfalls of traditional messaging applications. This paper describes, in great detail, the proposed peer-to-peer network; the structure of the proposed blockchain; and the proposed network protocol.
+\end{abstract}
+
+\section{Introduction}
+The rising usage of social media and their integrated messaging services has resulted in the hoarding of users' personal information for the purposes of advertisement. This allows personal information to be leaked in data breaches or sold off to other companies against the users' wishes. This has become especially apparent by the relatively recent introduction of GDPR rules by the European Union. (REFERENCE)
+
+\section{Structure of Blockchain}
+\subsection{Message Transactions}
+\subsection{Addresses}
+\subsection{Blocks}
+\subsection{Proof-of-Work}
+\subsubsection{ZK-Snarks}
+
+\section{Network Protocol}
+\subsection{Communication Structure (diagram etc.)}
+\subsection{Data Types}
+Below is a table of all data types required for the "Chains" P2P network protocol.
+
+\begin{center}
+\begin{tabular}{ ||l|l|l|| }
+\hline
+ Size & Name & Notes \\ 
+\hline\hline
+ 4 & int32 & 32 bit signed integer. \\  
+ 4 & int32 & 32 bit signed integer. \\  
+ 4 & int32 & 32 bit signed integer. \\  
+ 4 & int32 & 32 bit signed integer. \\  
+ 4 & int32 & 32 bit signed integer. \\  
+ 4 & int32 & 32 bit signed integer. \\  
+ 4 & int32 & 32 bit signed integer. \\  
+\hline
+\end{tabular}
+\end{center}
+
+\subsection{All Network Requests}
+For simplicity, much of the bitcoin protocol design has been carried over to the CHAINS project.
+Please note that all rows that appear grey in the following tables are mirrors of the bitcoin protocol.
+Also, for clarity, the use of "Message" in the bitcoin protocol documentation will be substituted for "Request" as in network request.
+
+\subsubsection{Version}
+\label{subsubsec:versionreq}
+This is the request that initialises all communications between interacting nodes on the network. It is a mirror of the request of the same name in the Bitcoin P2P network protocol.
+The "version" request contains a reference to the version of the protocol being used by the node.
+The remote node will respond with its version. No further communication is possible until both peers have exchanged their version.
+\newline\newline
+If incompatible versions are being used between two communicating machines, then the connection is deemed invalid and the IP is blacklisted at both ends until either of the clients receives an update. Typically, the versions of the protocol will be fully backward-compatible to avoid such issues.
+\begin{center}
+\begin{tabular}{ ||l|c|c|p{5cm}|| }
+\hline
+ Field Size & Description & Data Type & Notes. \\ 
+\hline\hline
+\rowcolor{g}
+ 4 & version & int32 & Identifies protocol version being used by the node. \\
+\rowcolor{g}
+ 8 & services & uint64 & Bitfield of features to be enabled for this connection. \\
+\rowcolor{g}
+ 8 & timestamp & int64 & Standard UNIX timestamp in seconds. \\  
+\rowcolor{g}
+ 26 & addr\_recv & net\_addr & The network address of the node emitting this message. \\
+\rowcolor{g}
+ 8 & nonce & uint64 & Node random nonce, randomly generated every time a version packet is sent. This nonce is used to detect connections to self. \\
+\rowcolor{g}
+ 4 & start\_height & int32 & The last block received by the emitting node. \\
+\rowcolor{g}
+ 1 & relay & bool & Whether the remote peer should announce relayed transactions or not. \\  
+\hline
+\end{tabular}
+\end{center}
+
+The following services are assigned:
+\begin{center}
+\begin{tabular}{ ||l|c|p{5cm}|| }
+\hline
+\multicolumn{3}{|c|}{Services} \\
+\hline
+ Value & Name & Description \\ 
+\hline\hline
+\rowcolor{g}
+ 1 & NODE\_NETWORK & This node can be asked for full blocks instead of just headers. \\
+\rowcolor{g}
+ 4 & NODE\_BLOOM & This node can be asked to perform bloom filter services. \\  
+\rowcolor{g}
+ 8 & NODE\_WITNESS & ? \\
+ \rowcolor{g}
+ 1024 & NODE\_NETWORK\_LIMITED & ? \\
+\hline
+\end{tabular}
+\end{center}
+
+
+\subsubsection{verack}
+\label{subsubsec:verackreq}
+This is the request that is sent in response to Version (\ref{subsubsec:versionreq}). It is a mirror of the request of the same name in the Bitcoin P2P network protocol. It contains only the request header with the command string "verack"
+\newline\newline
+If no verack is received within a timeout of 10 seconds, then the tcp socket is dropped and the connection shutdown at the initiator's end.
+
+\subsubsection{addr}
+\label{subsubsec:addrreq}
+This is the request that nodes use to find out about other nodes on the network. Recipients respond with a list of IP addresses. It is a mirror of the request of the same name in the Bitcoin P2P network protocol.
+\newline\newline
+Nodes should discard addresses that are not advertised for over 3 hours unless confirmed that they are up.
+
+\begin{center}
+\begin{tabular}{ ||l|c|c|p{5cm}|| }
+\hline
+ Field Size & Description & Data Type & Notes. \\ 
+\hline\hline
+\rowcolor{g}
+ 4 & count & int32 & Number of following addresses (max: 1000) \\
+\rowcolor{g}
+ 30x? & addr\_list & (uint32\_t + net\_addr)[] & List of addresses. With corresponding timestamp. If no timestamp then address should not be relayed. \\
+\hline
+\end{tabular}
+\end{center}
+Upon receipt of the \textit{addr} request, clients should add the addresses to their address books and relay to others on the network, removing duplicates.
+
+\section{Calculations}
+
+\section{App Development}
+
+
+\section{Conclusion}
+
+
+\end{document}
