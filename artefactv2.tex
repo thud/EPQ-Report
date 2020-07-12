@@ -1,0 +1,541 @@
+\documentclass{article}
+\usepackage[margin=1.75in]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage[backend=biber]{biblatex}
+\usepackage{graphicx}
+\usepackage{titlesec}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{mathtools}
+\usepackage[table,xcdraw]{xcolor}
+\usepackage{float}
+\usepackage{minted}
+\restylefloat{table}
+
+\definecolor{tblgrey}{gray}{0.95}
+
+\title{Blockchain Instant Messenger Specification \textit{v2} Artefact}
+\author{Jasper Parish}
+\date{March 2020}
+
+\begin{document}
+\maketitle
+\begin{center}
+   This represents \textit{v2} of the final result (artefact) of my EPQ design process.
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+
+
+\section{Blockchain Architecture}
+The following table shows all the data types which are to be used for the platform.
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|p{8.5cm}|}
+\hline
+\rowcolor{tblgrey} 
+Data Type  & Description                \\ \hline
+uint\_8     & 8 bit unsigned integer.            \\ \hline
+uint\_16    & 16 bit unsigned integer.           \\ \hline
+uint\_32    & 32 bit unsigned integer.           \\ \hline
+uint\_64    & 64 bit unsigned integer.           \\ \hline
+uint\_128   & 128 bit unsigned integer.          \\ \hline
+(u)int\_256 & 256 bit (un)signed integer.          \\ \hline
+var\_(u)int & Variably sized, (un)signed integer.    \\ \hline
+(u)int\_xx[\hspace{0.05cm}] & Array of xx-bit integers. (prepended with length) \\ \hline
+char        & \texttt{UTF-8} character. \\ \hline
+address     & User address. (public key) \\ \hline
+tx          & Message transaction.      \\ \hline
+encrypted\_payload & Encrypted field in a tx. \\ \hline
+msg         & Message object contained by encrypted\_payload. \\ \hline
+block       & Block. (with headers)     \\ \hline
+blockheaders& Block headers.            \\ \hline
+\end{tabular}
+\end{table}
+
+\subsection{address}
+A Bim address is made by taking the 256-bit \textit{x} component of a user's public key and appending a byte to indicate whether the \textit{y} component is odd or even.
+\[ \textit{address} = \textit{x component of public key} + \textit{odd\_or\_even} \]
+where
+\[\textit{odd\_or\_even} = 
+\begin{cases}
+    \texttt{00}_{16} &\textit{y component is even,} \\[6pt]
+    \texttt{FF}_{16} &\textit{y component is odd.}
+\end{cases}
+\]
+
+\newpage
+
+\subsection{tx}
+The following table shows the structure of a \textbf{tx} (message transaction).
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{1.3cm}|p{3cm}|p{5.5cm}|}
+\hline
+\rowcolor{tblgrey}
+Data Type   & Field       & Description\\ \hline
+char[\hspace{0.05cm}]    & version     & Transaction data format version.                          \\ \hline
+uint\_256   & chat\_id    & ChatID of chat. \\ \hline
+uint\_256   & tx\_id      & PoW value for tx. $H(H($\textit{nonce + encrypted\_payload}$))$ \\ \hline
+uint\_32    & lock\_time  & The block number at which this transaction is unlocked. \\ \hline
+uint\_64    & nonce       & PoW nonce value. \\ \hline
+uint\_64    & tsdc        & Transaction-specific difficulty constant.  \\ \hline
+uint\_128   & iv          & Initialisation vector used for AES-256-CBC.   \\ \hline
+address     & r           & Ephemeral public key $R$.   \\ \hline
+uint\_256   & mac         & Message authentication code. \\ \hline
+uint\_8[\hspace{0.05cm}]  & encrypted\_payload & Encrypted payload. \\ \hline
+\end{tabular}
+\end{table}
+Where:
+\begin{itemize}
+    \item \textit{chat\_id} (ChatID) is a cryptographically secure 256-bit random number. This must be exchanged between users before they can communicate properly.
+    \item \textit{lock\_time} is the first block in which this transaction can be included.
+    \item \textit{nonce} is a random value incremented until the tx\_id is below a target value.
+    \item \textit{tsdc} is the `transaction-specific difficulty constant (network minimum 1000).
+\end{itemize}
+
+\vspace{0.5cm}
+
+\paragraph{Encrypting and Decrypting a tx}
+Encryption on this platform is largely asymmetric; the \textit{secp256k1} curve is used for all elliptic curve cryptography (same parameters as Bitcoin).
+The steps to \textbf{encrypt} are as follows (identical to Bitmessage):
+\begin{enumerate}
+    \item The destination public key is called $K$.
+    \item Generate 16 random bytes using a cryptographically secure random number generator. Call them \textit{iv}.
+    \item Generate a new random EC key pair with private key called $r$ and public key called $R$.
+    \item Do an EC point multiply with public key $K$ and private key $r$. This gives you public key $P$.
+    \item Use the $x$ component of public key $P$ and calculate the \textbf{SHA512} hash $H$.
+    \item The first 32 bytes of $H$ are called \textit{key\_e} and the last 32 bytes are called \textit{key\_m}.
+    \item Pad the input text\footnote{This just refers to the input payload (ie. the fields that will later become \textit{encrypted\_payload}) in bytes.} to a multiple of 16 bytes, in accordance to PKCS7.
+    \item Encrypt the data with \textbf{AES-256-CBC}, using \textit{iv} as initialization vector, \textit{key\_e} as encryption key and the padded input text as payload. Call the output \textit{cipher\_text}.
+    \item Calculate a 32 byte MAC with \textbf{HMACSHA256}, using \textit{key\_m} as salt and \textit{iv} + $R$ + \textit{cipher\_text} as data. Call the output \textit{mac}.
+\end{enumerate}
+Thus the steps to \textbf{decrypt} are as follows (again identical to Bitmessage):
+\begin{enumerate}
+    \item The private key used to decrypt is called $k$.
+    \item Do an EC point multiply with private key $k$ and public key $R$. This gives you public key $P$.
+    \item Use the $x$ component of public key $P$ and calculate the \textbf{SHA512} hash $H$.
+    \item The first 32 bytes of $H$ are called \textit{key\_e} and the last 32 bytes are called \textit{key\_m}.
+    \item Calculate MAC' with \textbf{HMACSHA256}, using \textit{key\_m} as salt and \textit{iv} + $R$ + \textit{cipher\_text} as data.
+    \item Compare MAC with MAC'. If not equal, decryption will fail.
+    \item Decrypt the cipher text with \textbf{AES-256-CBC}, using \textit{iv} as initialization vector, \textit{key\_e} as decryption key and the \textit{cipher\_text} as payload. The output is the padded input text.
+\end{enumerate}
+
+Here, the \textit{cipher\_text} is the \textit{encrypted\_payload}.
+
+\paragraph{Proof-of-Work}
+The target value for a transaction's proof-of-work is calculated as follows.
+\[\textit{target} = \dfrac{2^{64}}{\textit{tsdc} \times \left(\textit{payloadLength} + \textit{payloadExtraBytes}\right)}\]
+\textit{payloadExtraBytes} is set to 1000 as a network minimum. Its purpose is to increase the difficulty of small messages. \textit{payloadLength} refers to the length in bytes of \textit{encrypted\_payload}.
+
+To actually compute proof-of-work for a tx, find \[\textit{result} = H(H(\textit{nonce} + \textit{encrypted\_payload}))\] and repeat until \textit{result} is below the \textit{target} value.
+
+The use of proof of work on each transaction increases the computational cost for a node to spam the network.
+
+\subsection{encrypted\_payload}
+The following table shows the fields present on an \textbf{encrypted\_payload}.
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{1.3cm}|p{2.5cm}|p{5.5cm}|}
+\hline
+\rowcolor{tblgrey}
+Data Type   & Field & Description\\ \hline
+var\_uint   & msg\_id     & msg\_id of message. (Used for acknowledgements and reactions)\\ \hline
+address     & tx\_from    & Sender's address. (0 for anonymous)      \\ \hline
+address     & tx\_to      & Intended recipient's address. (0 for open)      \\ \hline
+uint\_256   & msg\_sig    & Message signature.                             \\ \hline
+uint\_8     & msg\_type   & Type of message. (text, acknowledgment, sticker...)          \\ \hline
+msg         & msg         & Message object. (has different subfields depending on msg\_type) \\ \hline
+\end{tabular}
+\end{table}
+Where:
+\begin{itemize}
+    \item \textit{msg\_sig} is the \texttt{SHA256} hash of (\textit{msg\_id} + \textit{msg}) encrypted (signed) with the user's private key. (0 if tx\_from = 0)
+\end{itemize}
+
+\subsection{msg}
+A \textbf{msg} object can be of several different types.
+
+\begin{center}
+    \large \textit{text}
+\end{center}
+To send a simple message (text only), the following message is sent.
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{1.3cm}|p{2.5cm}|p{6cm}|}
+\hline
+\rowcolor{tblgrey} 
+Data Type       & Field           & Description                                               \\ \hline
+uint\_16        & encoding        & Encoding standard for decoding bytes to text. (eg. \texttt{UTF-8}) \\ \hline
+uint\_8[\hspace{0.05cm}] & data            & Simple plain-text message.                                \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{center}
+    \large \textit{acknowledgement}
+\end{center}
+An \textit{acknowledgement} msg is sent in order to indicate that a message has been read.
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{1.3cm}|p{2.5cm}|p{6cm}|}
+\hline
+\rowcolor{tblgrey} 
+Data Type       & Field           & Description                                               \\ \hline
+var\_uint       & rmsg\_id         & The msg\_id of the message which is being acknowledged.   \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{center}
+    \large \textit{sticker}
+\end{center}
+A \textit{sticker} message is a way of sending a picture. It is equivalent to the stickers included in all major, modern messaging services today.
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{1.3cm}|p{2.5cm}|p{6cm}|}
+\hline
+\rowcolor{tblgrey} 
+Data Type       & Field           & Description                                               \\ \hline
+uint\_16        & sticker\_pack   & The sticker pack which contains the chosen sticker.       \\ \hline
+uint\_8         & sticker\_index  & The index of the chosen sticker in its sticker pack.      \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{center}
+    \large \textit{reaction}
+\end{center}
+The \textit{reaction} message is sent to indicate a reply to a message. If the reply is a single unicode character long (eg. an emoji), then a client should treat this as a reaction (as in Facebook Messenger).
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{1.3cm}|p{2.5cm}|p{6cm}|}
+\hline
+\rowcolor{tblgrey} 
+Data Type       & Field           & Description                                               \\ \hline
+var\_uint       & rmsg\_id         & The message to be responded to.                           \\ \hline
+uint\_16        & encoding        & Encoding standard for decoding bytes to text.      \\ \hline
+uint\_8[\hspace{0.05cm}] & data            & Plain-text message data (could be single Unicode character or string reply).      \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{center}
+    \large \textit{file}
+\end{center}
+The \textit{file} message is self-explanatory. It allows for multiple files to be sent along with file names and file types.
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{1.3cm}|p{2.5cm}|p{5.5cm}|}
+\hline
+\rowcolor{tblgrey} 
+Data Type       & Field           & Description                                              \\ \hline
+uint\_8         & file\_count     & Number of files included.                                 \\ \hline
+char[\hspace{0.05cm}][\hspace{0.05cm}] & file\_names     & Names of files.                                           \\ \hline
+char[\hspace{0.05cm}][\hspace{0.05cm}] & file\_types     & Types of files (eg. PDF, PNG, JPEG).                      \\ \hline
+uint\_8[\hspace{0.05cm}]         & data            & Files' binary data.                                       \\ \hline
+\end{tabular}
+\end{table}
+
+\newpage
+
+\begin{center}
+    \large{\textit{poll}}
+\end{center}
+The \textit{poll} message is a way of creating a poll for other users to vote in.
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{1.3cm}|p{2.5cm}|p{5.5cm}|}
+\hline
+\rowcolor{tblgrey} 
+Data Type   & Field           & Description                                               \\ \hline
+char[\hspace{0.05cm}] & poll\_name      & Name of poll. (ie. what is being voted on)                \\ \hline
+char[\hspace{0.05cm}][\hspace{0.05cm}] & poll\_topics    & Possible vote candidates                                  \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{center}
+    \large{\textit{poll\_vote}}
+\end{center}
+The \textit{poll\_vote} message is a how users interact with a poll that has already been created.
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{1.3cm}|p{2.5cm}|p{5.5cm}|}
+\hline
+\rowcolor{tblgrey} 
+Data Type & Field           & Description                                               \\ \hline
+char[\hspace{0.05cm}] & poll\_name      & Name of poll.                                             \\ \hline
+char[\hspace{0.05cm}] & poll\_topic     & Chosen poll topic. (if new then create it)                \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{center}
+    \large{\textit{set\_nickname}}
+\end{center}
+The \textit{set\_nickname} message allows users to set a nickname for a user on the chat.
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{1.3cm}|p{2.5cm}|p{5.5cm}|}
+\hline
+\rowcolor{tblgrey} 
+Data T5pe       & Field           & Description                                               \\ \hline
+address         & subject         & Subject who is to be nicknamed.                           \\ \hline
+char[\hspace{0.05cm}] & nickname        & New nickname to be applied.                               \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{center}
+    \large{\textit{set\_chatname}}
+\end{center}
+The \textit{set\_chatname} message allows users to set a name for the chat.
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{1.3cm}|p{2.5cm}|p{5.5cm}|}
+\hline
+\rowcolor{tblgrey} 
+Data Type       & Field           & Description                                               \\ \hline
+char[\hspace{0.05cm}] & chatname        & New name for chat.                                        \\ \hline
+\end{tabular}
+\end{table}
+
+\subsection{block}
+The following table indicates the fields which should be present on a block.
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{1.3cm}|p{2.5cm}|p{5.5cm}|}
+\hline
+\rowcolor{tblgrey} 
+Data Type   & Field      & Description                            \\ \hline
+char[\hspace{0.05cm}]  & version     & Version of platform used by block creator.          \\ \hline
+uint\_32    & no          & Block Number.                                       \\ \hline
+uint\_256   & merkle      & The Merkle root hash of all transactions.  \\ \hline
+uint\_256   & prev        & The BlockID of the previous block in the blockchain.   \\ \hline
+uint\_64    & nonce       & PoW nonce value for the block.                      \\ \hline
+uint\_32    & ts          & Timestamp of block when created.                    \\ \hline
+tx[\hspace{0.05cm}] & tx\_l       & A list of transactions.                            \\ \hline
+\end{tabular}
+\end{table}
+Where:
+\begin{itemize}
+    \item \textit{no} (block number) is the index of a block in the blockchain (ie. 1$^{st}$ block $\rightarrow$ 0, 2$^{nd}$ block $\rightarrow$ 1, 3$^{rd}$ block $\rightarrow$ 2...);
+    \item \textit{merkle} is calculated with $M(\textit{tx\_l})$ \\
+    ($M$ $\coloneqq$ \texttt{SHA256} Merkle root hash function, $+ \coloneqq$ concatenation); 
+    \item \textit{nonce} is a random integer that is incremented until the BlockID is below a certain difficulty value;
+    \item \textit{ts} is the UNIX timestamp of the block's creation time.
+\end{itemize}
+
+
+\paragraph{Proof-of-Work}
+The difficulty for the next block in the chain is calculated as so.
+\[\textit{difficulty}_{\textit{new}} = \textit{difficulty}_{\textit{old}}
+\ + \ \left\lfloor\dfrac{\textit{difficulty}_{\textit{old}}}{2048}\right\rfloor \times \max\left(1- \left\lfloor \frac{\textit{block\_time}}{10} \right\rfloor,\ -99\right)\]
+
+The new target value is calculated as follows.
+\[\textit{target}_{\textit{new}} = \frac{\textit{target}_{\textit{old}}} {\textit{difficulty}_{\textit{new}}}\]
+
+To compute the proof-of-work for a block, find \[\textit{result} = H(\textit{nonce} + \textit{prev} + \textit{merkle})\] and repeat until \textit{result} is below the \textit{target} value.
+
+\newpage
+
+\section{Network}
+This platform uses a decentralised peer-to-peer network of nodes who relay information between each other. All communication is done over \textbf{TCP} (Transmission Control Protocol).
+
+The default port for use of this platform's network protocol is \textbf{8855}.
+
+The `ip\_addr' type has to be defined for the network protocol. This consists of the following structure.
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{2.2cm}|p{3cm}|p{5.5cm}|}
+\hline
+\rowcolor{tblgrey}
+Data Type   & Field       & Description\\ \hline
+uint\_128   & address     & IPv6 address or IPv4-mapped IPv6 address.                    \\ \hline
+uint\_16    & port        & Port number.                                                 \\ \hline
+\end{tabular}
+\end{table}
+
+\subsection{request}
+The standard structure for a network request is as follows.
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{2.5cm}|p{2cm}|p{5.5cm}|}
+\hline
+\rowcolor{tblgrey} 
+Data Type   & Field       & Description                                      \\ \hline
+uint\_32    & magic       & Magic value indicating origin network.           \\ \hline
+uint\_8     & command     & Identifies packet content (ie. encodes the purpose of the message). \\ \hline
+uint\_32    & checksum    & Checksum hash of request payload.                \\ \hline
+request\_payload & payload     & Actual request payload (ie. content of request). \\ \hline
+\end{tabular}
+\end{table}
+Where:
+\begin{itemize}
+    \item \textit{magic} is the magic value of the network being used (\texttt{DDE6AE4C}$_{16}$ and \\ \texttt{CF713BF3}$_{16}$ for main and test networks respectively);
+    \item \textit{command} indicates the type of message to be sent (ie. 0 = \textit{text}, 1 = \textit{acknowledgement}, ...);
+    \item \textit{checksum} is the first four bytes of $H(request\_payload)$ \\
+    ($H \coloneqq$ \texttt{SHA256} hash function);
+    \item \textit{request\_payload} is the main request itself.
+\end{itemize}
+
+\newpage
+
+\subsection{request\_payload}
+A \textbf{request\_payload} can be any of the following types.
+
+\begin{center}
+    \large \textit{version}
+\end{center}
+The \textbf{version} request is how all communications on the network are initiated. Each node sends a `version' request to the other, who returns with a `verack'.
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{1.5cm}|p{2.5cm}|p{5.5cm}|}
+\hline
+\rowcolor{tblgrey}
+Data Type   & Field       & Description\\ \hline
+uint\_8     & version     & Version of platform being used.                          \\ \hline
+uint\_64    & nonce       & Random nonce used to detect connections to self.                   \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{center}
+    \large \textit{verack}
+\end{center}
+The \textbf{verack} request is made in response to a `version' request. It contains no fields and thus the payload is empty.
+
+\begin{center}
+    \large \textit{addr}
+\end{center}
+The \textbf{addr} request is made when a node wants to discover new nodes on the network. This request should be made in most interactions between two nodes in order to keep the network online.
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{1.5cm}|p{2.5cm}|p{5.5cm}|}
+\hline
+\rowcolor{tblgrey}
+Data Type   & Field       & Description\\ \hline
+ip\_addr[\hspace{0.05cm}] & addr\_l       & Array of shared node addresses. (max 1000)                               \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{center}
+    \large \textit{inv}
+\end{center}
+The \textbf{inv} request is sent once `verack's have been exchanged. This is so that each node knows the exact data available to them.
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{1.5cm}|p{2.5cm}|p{5.5cm}|}
+\hline
+\rowcolor{tblgrey}
+Data Type   & Field       & Description\\ \hline
+uint\_32[\hspace{0.05cm}] & blocks & List of block numbers of blocks to share.                    \\ \hline
+uint\_32[\hspace{0.05cm}] & blockheaders & List of block numbers of block headers to share.                    \\ \hline
+uint\_8[\hspace{0.05cm}]  & bloomfilters & List of block numbers for which a bloom filter is possessed.        \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{center}
+    \large \textit{get\_blocks}
+\end{center}
+The \textbf{get\_blocks} request is sent in order to ask for a given set of blocks.
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{1.5cm}|p{2.5cm}|p{5.5cm}|}
+\hline
+\rowcolor{tblgrey}
+Data Type   & Field       & Description\\ \hline
+uint\_32[\hspace{0.05cm}] & block & List of block numbers of blocks wanted.                    \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{center}
+    \large \textit{get\_blockheaders}
+\end{center}
+The \textbf{get\_blockheaders} request is sent in order to ask for a given set of blockheaders.
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{1.5cm}|p{2.5cm}|p{5.5cm}|}
+\hline
+\rowcolor{tblgrey}
+Data Type   & Field       & Description\\ \hline
+uint\_32[\hspace{0.05cm}] & blockheaders & List of block numbers of block headers wanted.                    \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{center}
+    \large \textit{blocks}
+\end{center}
+The \textbf{blocks} request is sent in order to return a set of blocks asked for by another node. If the sender doesn't possess one or more the blocks asked for, then those blocks are ignored. An empty `blocks' request indicates that none of the requested blocks were possessed.
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{1.5cm}|p{2.5cm}|p{5.5cm}|}
+\hline
+\rowcolor{tblgrey}
+Data Type   & Field       & Description\\ \hline
+block[\hspace{0.05cm}] & blocks & List of blocks to share.                    \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{center}
+    \large \textit{blockheaders}
+\end{center}
+The \textbf{blockheaders} request is sent in order to return a set of blockheaders asked for by another node. If the sender doesn't possess one or more of the block headers asked for, then those block headers are ignored. An empty `blockheaders' request indicated that none of the requested blocks were possessed as in the `blocks' request above.
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{2.2cm}|p{2.5cm}|p{5.5cm}|}
+\hline
+\rowcolor{tblgrey}
+Data Type   & Field       & Description\\ \hline
+blockheader[\hspace{0.05cm}] & blockheaders & List of block headers to share.                    \\ \hline
+\end{tabular}
+\end{table}
+
+\newpage
+
+\begin{center}
+    \large \textit{get\_newtx}
+\end{center}
+The \textbf{get\_newtx} request is sent in order to ask for all transactions that have yet to be included in the blockchain. It contains no fields; thus the payload is empty. Non-mining nodes will never need to send this request but they may receive a `get\_newtx' request.
+
+\begin{center}
+    \large \textit{newtx}
+\end{center}
+The \textbf{newtx} request is sent in response to a `get\_newtx' request. It contains one field: a list of transactions.
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{2.2cm}|p{3cm}|p{5.5cm}|}
+\hline
+\rowcolor{tblgrey}
+Data Type   & Field       & Description\\ \hline
+tx[\hspace{0.05cm}] & tx\_l & List of new transactions to share. (max 1000)                  \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{center}
+    \large \textit{check\_blooms}
+\end{center}
+The \textbf{check\_blooms} request is sent in order to check to see if messages on given chats have been included in any of a given set of blocks. It contains two fields: a list of ChatIDs to filter for and a list of block numbers corresponding to blocks which should be checked.
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{1.6cm}|p{2.5cm}|p{5.5cm}|}
+\hline
+\rowcolor{tblgrey}
+Data Type   & Field       & Description\\ \hline
+uint\_256[\hspace{0.05cm}]& chat\_ids    & ChatIDs for transactions being looked for.   \\ \hline
+uint\_32[\hspace{0.05cm}] & blocks  & Block Numbers to check.       \\ \hline
+\end{tabular}
+\end{table}
+
+\begin{center}
+    \large \textit{blooms\_checked}
+\end{center}
+The \textbf{blooms\_checked} request is sent in response to a `check\_blooms' request and provides the results of a bloom filter check.
+\begin{table}[H]
+\centering
+\begin{tabular}{|p{1.5cm}|p{2.5cm}|p{5.5cm}|}
+\hline
+\rowcolor{tblgrey}
+Data Type   & Field       & Description\\ \hline
+uint\_32[\hspace{0.05cm}] & blocks  & Block Numbers which gave positive result.       \\ \hline
+\end{tabular}
+\end{table}
+
+\end{document}
